@@ -17,6 +17,7 @@ Ideacast is a web application designed for Infulence designers (entrepreneurs) t
 - **LLM-Powered Content Formatting:**
   - Process the input using customizable template prompts.
   - Generate multiple formatted outputs for different social media platforms (initially LinkedIn and Twitter).
+  - LLM backend is configurable: **Google Gemini** (hosted API) or **Ollama** (local); see `README.md` and `.env.example`.
 - **Styled Previews:**
   - Display outputs with styles that replicate the final appearance on each respective platform.
   - Provide an editing interface for users to refine the content.

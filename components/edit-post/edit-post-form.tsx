@@ -1,0 +1,266 @@
+"use client";
+
+import * as React from "react";
+import { Loader2Icon, SparklesIcon, SaveIcon } from "lucide-react";
+import { toast } from "sonner";
+
+import { PlatformPreviews, type PlatformCopy } from "@/components/edit-post/platform-previews";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { DEFAULT_TEMPLATE_ID } from "@/lib/content/default-templates";
+import { readFileAsBase64Parts } from "@/lib/client/image-data-url";
+import { cn } from "@/lib/utils";
+
+type TemplateOption = {
+  id: string;
+  name: string;
+};
+
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+
+/**
+ * New Post editor: raw input, optional image, template selection, generate, save draft.
+ */
+export function EditPostForm() {
+  const [templates, setTemplates] = React.useState<TemplateOption[]>([]);
+  const [templatesLoading, setTemplatesLoading] = React.useState(true);
+  const [templateId, setTemplateId] = React.useState<string>(DEFAULT_TEMPLATE_ID);
+  const [rawContent, setRawContent] = React.useState("");
+  const [imageFile, setImageFile] = React.useState<File | null>(null);
+  const imagePreviewUrl = React.useMemo(() => {
+    if (!imageFile) {
+      return null;
+    }
+    return URL.createObjectURL(imageFile);
+  }, [imageFile]);
+
+  React.useEffect(() => {
+    return () => {
+      if (imagePreviewUrl) {
+        URL.revokeObjectURL(imagePreviewUrl);
+      }
+    };
+  }, [imagePreviewUrl]);
+  const [formatted, setFormatted] = React.useState<PlatformCopy | null>(null);
+  const [generating, setGenerating] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/templates");
+        if (!res.ok) {
+          throw new Error("Could not load templates");
+        }
+        const data = (await res.json()) as { templates: TemplateOption[] };
+        if (cancelled) {
+          return;
+        }
+        setTemplates(
+          data.templates.map((t) => ({ id: t.id, name: t.name })),
+        );
+        if (data.templates.length > 0) {
+          const hasDefault = data.templates.some(
+            (t) => t.id === DEFAULT_TEMPLATE_ID,
+          );
+          setTemplateId(
+            hasDefault ? DEFAULT_TEMPLATE_ID : data.templates[0].id,
+          );
+        }
+      } catch (e) {
+        toast.error(
+          e instanceof Error ? e.message : "Failed to load templates",
+        );
+      } finally {
+        if (!cancelled) {
+          setTemplatesLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const onPickImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setImageFile(null);
+    e.target.value = "";
+    if (!file) {
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      toast.error("Image must be 4MB or smaller.");
+      return;
+    }
+    setImageFile(file);
+  };
+
+  const handleGenerate = async () => {
+    if (!rawContent.trim()) {
+      toast.error("Add some ideas or notes first.");
+      return;
+    }
+    setGenerating(true);
+    setFormatted(null);
+    try {
+      let imageBase64: string | undefined;
+      let imageMediaType:
+        | "image/jpeg"
+        | "image/png"
+        | "image/webp"
+        | "image/gif"
+        | undefined;
+      if (imageFile) {
+        const parts = await readFileAsBase64Parts(imageFile);
+        imageBase64 = parts.base64;
+        imageMediaType = parts.mediaType;
+      }
+      const res = await fetch("/api/format", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rawContent,
+          templateId,
+          imageBase64,
+          imageMediaType,
+        }),
+      });
+      const body = (await res.json()) as {
+        formatted?: PlatformCopy;
+        error?: string;
+        issues?: unknown;
+      };
+      if (!res.ok) {
+        throw new Error(body.error ?? "Generation failed");
+      }
+      if (!body.formatted) {
+        throw new Error("No formatted content returned");
+      }
+      setFormatted(body.formatted);
+      toast.success("Content generated");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Generation failed");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleSaveDraft = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rawContent,
+          formattedContent: formatted
+            ? { linkedin: formatted.linkedin, twitter: formatted.twitter }
+            : {},
+        }),
+      });
+      const body = (await res.json()) as { error?: string; post?: { id: string } };
+      if (!res.ok) {
+        throw new Error(body.error ?? "Could not save draft");
+      }
+      toast.success("Draft saved");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-8">
+      <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="template">Template</Label>
+            <select
+              id="template"
+              className={cn(
+                "flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none",
+                "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                "disabled:cursor-not-allowed disabled:opacity-50",
+              )}
+              disabled={templatesLoading || templates.length === 0}
+              value={templateId}
+              onChange={(e) => setTemplateId(e.target.value)}
+            >
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+            {templatesLoading ? (
+              <p className="text-xs text-muted-foreground">Loading templates…</p>
+            ) : null}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="raw">Raw ideas</Label>
+            <Textarea
+              id="raw"
+              placeholder="Dump your rough notes, bullets, or ideas here…"
+              value={rawContent}
+              onChange={(e) => setRawContent(e.target.value)}
+              disabled={generating}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="image">Image (optional)</Label>
+            <input
+              id="image"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary-foreground"
+              onChange={onPickImage}
+              disabled={generating}
+            />
+            {imageFile ? (
+              <p className="text-xs text-muted-foreground">{imageFile.name}</p>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              onClick={handleGenerate}
+              disabled={generating || templatesLoading}
+            >
+              {generating ? (
+                <Loader2Icon className="size-4 animate-spin" />
+              ) : (
+                <SparklesIcon className="size-4" />
+              )}
+              Generate
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleSaveDraft}
+              disabled={saving}
+            >
+              {saving ? (
+                <Loader2Icon className="size-4 animate-spin" />
+              ) : (
+                <SaveIcon className="size-4" />
+              )}
+              Save draft
+            </Button>
+          </div>
+        </div>
+
+        <PlatformPreviews
+          copy={formatted}
+          imagePreviewUrl={imagePreviewUrl}
+        />
+      </div>
+    </div>
+  );
+}

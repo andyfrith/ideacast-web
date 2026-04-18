@@ -27,13 +27,14 @@
 - **Processing:** Data is sent to the LLM service for content formatting.
 - **Output:** Formatted content is displayed in styled previews.
 - **Editing:** Users can make inline edits before finalizing.
-- **Publishing:** Final content is sent to the backend, stored in Supabase, and pushed to social media via OAuth.
+- **Publishing:** Final content is sent to the backend, stored in Neon, and pushed to social media via OAuth.
 - **Review:** Content and status (draft, pending, published) are accessible from a dashboard.
 
 # Technical Stack
 
 - **Frontend:** React, Next.js, Tailwind CSS, Shadcn UI, React Hook Form, Zustand, Lucide Icons, Sonner Toast, Zod.
 - **Backend:** Drizzle, Postgres, Neon, Vercel.
+- **LLM formatting:** Configurable — **Google Gemini** (hosted API) or **Ollama** (local); selected via `LLM_PROVIDER`.
 - **Authentication & Payment:** Clerk Auth, Stripe.
 - **Integrations:** OAuth for social media (Instagram, YouTube, X, LinkedIn).
 - **Storybook:** Component-driven design
