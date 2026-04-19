@@ -24,12 +24,15 @@ export function getConfiguredLlmProvider(): LlmProviderId {
 
 /**
  * Runs the configured provider to produce LinkedIn + X copy as JSON (`linkedin`, `twitter`).
+ * With `regeneratePlatform`, only that field is regenerated and merged with `existingFormatted`.
  */
 export async function formatContentWithLlm(params: {
   systemPrompt: string;
   rawContent: string;
   imageBase64?: string;
   imageMediaType?: string;
+  regeneratePlatform?: "linkedin" | "twitter";
+  existingFormatted?: { linkedin: string; twitter: string };
 }): Promise<FormattedOutput> {
   const provider = getConfiguredLlmProvider();
   if (provider === "gemini") {

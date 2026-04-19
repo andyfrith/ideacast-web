@@ -2,7 +2,11 @@ import "server-only";
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-import { parseFormattedJson } from "@/lib/ai/parse-formatted-json";
+import {
+  parseAndMergeSinglePlatform,
+  parseFormattedJson,
+} from "@/lib/ai/parse-formatted-json";
+import { singlePlatformJsonSuffix } from "@/lib/ai/single-platform";
 import type { FormattedOutput } from "@/lib/validations/format-request";
 
 const DEFAULT_GEMINI_MODEL = "gemini-2.0-flash";
@@ -30,15 +34,23 @@ export async function formatWithGemini(params: {
   rawContent: string;
   imageBase64?: string;
   imageMediaType?: string;
+  regeneratePlatform?: "linkedin" | "twitter";
+  existingFormatted?: { linkedin: string; twitter: string };
 }): Promise<FormattedOutput> {
   const apiKey = getGeminiApiKey();
   const modelName =
     process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
 
+  const single = params.regeneratePlatform;
+  const systemInstruction =
+    single && params.existingFormatted
+      ? `${params.systemPrompt}${singlePlatformJsonSuffix(single)}`
+      : params.systemPrompt;
+
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
     model: modelName,
-    systemInstruction: params.systemPrompt,
+    systemInstruction,
     generationConfig: {
       responseMimeType: "application/json",
     },
@@ -62,6 +74,14 @@ export async function formatWithGemini(params: {
   const raw = result.response.text();
   if (!raw?.trim()) {
     throw new Error("Empty response from Gemini");
+  }
+
+  if (single && params.existingFormatted) {
+    return parseAndMergeSinglePlatform(
+      raw,
+      single,
+      params.existingFormatted,
+    );
   }
 
   return parseFormattedJson(raw);

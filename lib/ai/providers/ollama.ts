@@ -1,6 +1,10 @@
 import "server-only";
 
-import { parseFormattedJson } from "@/lib/ai/parse-formatted-json";
+import {
+  parseAndMergeSinglePlatform,
+  parseFormattedJson,
+} from "@/lib/ai/parse-formatted-json";
+import { singlePlatformJsonSuffix } from "@/lib/ai/single-platform";
 import type { FormattedOutput } from "@/lib/validations/format-request";
 
 const DEFAULT_OLLAMA_BASE = "http://127.0.0.1:11434";
@@ -31,9 +35,17 @@ export async function formatWithOllama(params: {
   rawContent: string;
   imageBase64?: string;
   imageMediaType?: string;
+  regeneratePlatform?: "linkedin" | "twitter";
+  existingFormatted?: { linkedin: string; twitter: string };
 }): Promise<FormattedOutput> {
   const base = getOllamaBaseUrl();
   const model = process.env.OLLAMA_MODEL?.trim() || DEFAULT_OLLAMA_MODEL;
+
+  const single = params.regeneratePlatform;
+  const systemContent =
+    single && params.existingFormatted
+      ? `${params.systemPrompt}${singlePlatformJsonSuffix(single)}`
+      : params.systemPrompt;
 
   const textBlock = `Raw notes / ideas from the user:\n\n${params.rawContent}`;
 
@@ -56,7 +68,7 @@ export async function formatWithOllama(params: {
     body: JSON.stringify({
       model,
       messages: [
-        { role: "system", content: params.systemPrompt },
+        { role: "system", content: systemContent },
         userMessage,
       ],
       stream: false,
@@ -75,6 +87,14 @@ export async function formatWithOllama(params: {
   const raw = body.message?.content;
   if (!raw?.trim()) {
     throw new Error("Empty response from Ollama");
+  }
+
+  if (single && params.existingFormatted) {
+    return parseAndMergeSinglePlatform(
+      raw,
+      single,
+      params.existingFormatted,
+    );
   }
 
   return parseFormattedJson(raw);
