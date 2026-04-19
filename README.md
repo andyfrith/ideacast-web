@@ -76,6 +76,7 @@ LLM_PROVIDER=ollama
 
 ## Docs in repo
 
+- `ROADMAP.md` — phased implementation plan (engineering roadmap)  
 - `prd.md` — product requirements  
 - `srs.md` — system / technical design  
 - `ux-design.md` — UI notes  

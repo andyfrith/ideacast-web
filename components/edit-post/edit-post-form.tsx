@@ -4,7 +4,11 @@ import * as React from "react";
 import { Loader2Icon, SparklesIcon, SaveIcon } from "lucide-react";
 import { toast } from "sonner";
 
-import { PlatformPreviews, type PlatformCopy } from "@/components/edit-post/platform-previews";
+import {
+  PlatformPreviews,
+  type GeneratingMode,
+  type PlatformCopy,
+} from "@/components/edit-post/platform-previews";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,8 +23,10 @@ type TemplateOption = {
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
+const emptyCopy = (): PlatformCopy => ({ linkedin: "", twitter: "" });
+
 /**
- * New Post editor: raw input, optional image, template selection, generate, save draft.
+ * New Post editor: raw input, optional image, template selection, generate, inline preview edits, save draft.
  */
 export function EditPostForm() {
   const [templates, setTemplates] = React.useState<TemplateOption[]>([]);
@@ -42,8 +48,10 @@ export function EditPostForm() {
       }
     };
   }, [imagePreviewUrl]);
-  const [formatted, setFormatted] = React.useState<PlatformCopy | null>(null);
-  const [generating, setGenerating] = React.useState(false);
+
+  const [platformCopy, setPlatformCopy] = React.useState<PlatformCopy>(emptyCopy);
+  const [hasGenerated, setHasGenerated] = React.useState(false);
+  const [generatingMode, setGeneratingMode] = React.useState<GeneratingMode>(null);
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
@@ -98,40 +106,41 @@ export function EditPostForm() {
     setImageFile(file);
   };
 
+  const buildImagePayload = async () => {
+    if (!imageFile) {
+      return {} as {
+        imageBase64?: string;
+        imageMediaType?: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+      };
+    }
+    const parts = await readFileAsBase64Parts(imageFile);
+    return {
+      imageBase64: parts.base64,
+      imageMediaType: parts.mediaType,
+    };
+  };
+
   const handleGenerate = async () => {
     if (!rawContent.trim()) {
       toast.error("Add some ideas or notes first.");
       return;
     }
-    setGenerating(true);
-    setFormatted(null);
+    setGeneratingMode("all");
+    setPlatformCopy(emptyCopy());
     try {
-      let imageBase64: string | undefined;
-      let imageMediaType:
-        | "image/jpeg"
-        | "image/png"
-        | "image/webp"
-        | "image/gif"
-        | undefined;
-      if (imageFile) {
-        const parts = await readFileAsBase64Parts(imageFile);
-        imageBase64 = parts.base64;
-        imageMediaType = parts.mediaType;
-      }
+      const imagePayload = await buildImagePayload();
       const res = await fetch("/api/format", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           rawContent,
           templateId,
-          imageBase64,
-          imageMediaType,
+          ...imagePayload,
         }),
       });
       const body = (await res.json()) as {
         formatted?: PlatformCopy;
         error?: string;
-        issues?: unknown;
       };
       if (!res.ok) {
         throw new Error(body.error ?? "Generation failed");
@@ -139,12 +148,58 @@ export function EditPostForm() {
       if (!body.formatted) {
         throw new Error("No formatted content returned");
       }
-      setFormatted(body.formatted);
+      setPlatformCopy(body.formatted);
+      setHasGenerated(true);
       toast.success("Content generated");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Generation failed");
     } finally {
-      setGenerating(false);
+      setGeneratingMode(null);
+    }
+  };
+
+  const runSinglePlatformRegenerate = async (platform: "linkedin" | "twitter") => {
+    if (!rawContent.trim()) {
+      toast.error("Add some ideas or notes first.");
+      return;
+    }
+    setGeneratingMode(platform);
+    try {
+      const imagePayload = await buildImagePayload();
+      const res = await fetch("/api/format", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rawContent,
+          templateId,
+          ...imagePayload,
+          regeneratePlatform: platform,
+          existingFormatted: {
+            linkedin: platformCopy.linkedin,
+            twitter: platformCopy.twitter,
+          },
+        }),
+      });
+      const body = (await res.json()) as {
+        formatted?: PlatformCopy;
+        error?: string;
+      };
+      if (!res.ok) {
+        throw new Error(body.error ?? "Regeneration failed");
+      }
+      if (!body.formatted) {
+        throw new Error("No formatted content returned");
+      }
+      setPlatformCopy(body.formatted);
+      toast.success(
+        platform === "linkedin"
+          ? "LinkedIn copy regenerated"
+          : "X copy regenerated",
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Regeneration failed");
+    } finally {
+      setGeneratingMode(null);
     }
   };
 
@@ -156,12 +211,13 @@ export function EditPostForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           rawContent,
-          formattedContent: formatted
-            ? { linkedin: formatted.linkedin, twitter: formatted.twitter }
-            : {},
+          formattedContent: {
+            linkedin: platformCopy.linkedin,
+            twitter: platformCopy.twitter,
+          },
         }),
       });
-      const body = (await res.json()) as { error?: string; post?: { id: string } };
+      const body = (await res.json()) as { error?: string };
       if (!res.ok) {
         throw new Error(body.error ?? "Could not save draft");
       }
@@ -172,6 +228,8 @@ export function EditPostForm() {
       setSaving(false);
     }
   };
+
+  const busy = generatingMode !== null;
 
   return (
     <div className="flex flex-col gap-8">
@@ -186,7 +244,7 @@ export function EditPostForm() {
                 "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
                 "disabled:cursor-not-allowed disabled:opacity-50",
               )}
-              disabled={templatesLoading || templates.length === 0}
+              disabled={templatesLoading || templates.length === 0 || busy}
               value={templateId}
               onChange={(e) => setTemplateId(e.target.value)}
             >
@@ -208,7 +266,7 @@ export function EditPostForm() {
               placeholder="Dump your rough notes, bullets, or ideas here…"
               value={rawContent}
               onChange={(e) => setRawContent(e.target.value)}
-              disabled={generating}
+              disabled={busy}
             />
           </div>
 
@@ -220,7 +278,7 @@ export function EditPostForm() {
               accept="image/jpeg,image/png,image/webp,image/gif"
               className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary-foreground"
               onChange={onPickImage}
-              disabled={generating}
+              disabled={busy}
             />
             {imageFile ? (
               <p className="text-xs text-muted-foreground">{imageFile.name}</p>
@@ -231,20 +289,20 @@ export function EditPostForm() {
             <Button
               type="button"
               onClick={handleGenerate}
-              disabled={generating || templatesLoading}
+              disabled={busy || templatesLoading}
             >
-              {generating ? (
+              {generatingMode === "all" ? (
                 <Loader2Icon className="size-4 animate-spin" />
               ) : (
                 <SparklesIcon className="size-4" />
               )}
-              Generate
+              Generate both
             </Button>
             <Button
               type="button"
               variant="secondary"
               onClick={handleSaveDraft}
-              disabled={saving}
+              disabled={saving || busy}
             >
               {saving ? (
                 <Loader2Icon className="size-4 animate-spin" />
@@ -254,11 +312,28 @@ export function EditPostForm() {
               Save draft
             </Button>
           </div>
+          {hasGenerated ? (
+            <p className="text-xs text-muted-foreground">
+              Edits in the previews are kept until you save the draft or run
+              generate again.
+            </p>
+          ) : null}
         </div>
 
         <PlatformPreviews
-          copy={formatted}
+          linkedinText={platformCopy.linkedin}
+          twitterText={platformCopy.twitter}
+          onLinkedInChange={(v) =>
+            setPlatformCopy((p) => ({ ...p, linkedin: v }))
+          }
+          onTwitterChange={(v) =>
+            setPlatformCopy((p) => ({ ...p, twitter: v }))
+          }
+          onRegenerateLinkedIn={() => runSinglePlatformRegenerate("linkedin")}
+          onRegenerateTwitter={() => runSinglePlatformRegenerate("twitter")}
           imagePreviewUrl={imagePreviewUrl}
+          hasGenerated={hasGenerated}
+          generatingMode={generatingMode}
         />
       </div>
     </div>

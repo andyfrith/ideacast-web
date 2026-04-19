@@ -9,8 +9,8 @@ export default function EditPostPage() {
       <div className="space-y-1">
         <h1 className="text-2xl font-bold tracking-tight">New Post</h1>
         <p className="text-muted-foreground">
-          Add rough notes, pick a template, then generate polished LinkedIn and X
-          copy. Save a draft anytime.
+          Add rough notes, pick a template, then generate copy. Edit previews
+          inline, regenerate one platform at a time, and save a draft anytime.
         </p>
       </div>
       <EditPostForm />

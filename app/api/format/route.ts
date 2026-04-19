@@ -67,6 +67,8 @@ export async function POST(request: Request) {
       rawContent: data.rawContent,
       imageBase64: data.imageBase64,
       imageMediaType: data.imageMediaType,
+      regeneratePlatform: data.regeneratePlatform,
+      existingFormatted: data.existingFormatted,
     });
     return NextResponse.json({ formatted });
   } catch (err) {
