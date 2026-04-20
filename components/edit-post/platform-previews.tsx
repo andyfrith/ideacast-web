@@ -26,7 +26,10 @@ type PlatformPreviewsProps = {
   onTwitterChange: (value: string) => void;
   onRegenerateLinkedIn: () => void | Promise<void>;
   onRegenerateTwitter: () => void | Promise<void>;
+  /** Local object URL from a picked file (takes precedence over `remoteImageUrl`). */
   imagePreviewUrl: string | null;
+  /** Saved post image URL when there is no local file preview. */
+  remoteImageUrl?: string | null;
   /** True once the user has generated at least once (enables per-platform regen). */
   hasGenerated: boolean;
   generatingMode: GeneratingMode;
@@ -44,10 +47,13 @@ export function PlatformPreviews({
   onRegenerateLinkedIn,
   onRegenerateTwitter,
   imagePreviewUrl,
+  remoteImageUrl = null,
   hasGenerated,
   generatingMode,
   className,
 }: PlatformPreviewsProps) {
+  const linkedInAttachmentUrl = imagePreviewUrl ?? remoteImageUrl ?? null;
+
   return (
     <div
       className={cn(
@@ -57,7 +63,7 @@ export function PlatformPreviews({
     >
       <LinkedInPreview
         text={linkedinText}
-        imageUrl={imagePreviewUrl}
+        imageUrl={linkedInAttachmentUrl}
         onChange={onLinkedInChange}
         onRegenerate={onRegenerateLinkedIn}
         hasGenerated={hasGenerated}

@@ -27,6 +27,7 @@ Ideacast is a web application designed for Infulence designers (entrepreneurs) t
 - **Extensibility:**
   - Ability to add more social media platforms in future versions.
   - Potential expansion to mobile-responsive or mobile-native designs later.
+- **Client data loading (V1):** Opening an existing post for edit uses TanStack Query (`usePost`, `GET /api/posts/[id]`) for loading, caching, and error handling; developers can inspect queries with React Query DevTools in local development.
 
 ## User Stories
 

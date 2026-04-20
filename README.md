@@ -1,12 +1,12 @@
 # Ideacast
 
-Web app for capturing ideas, generating **LinkedIn** and **X (Twitter)** copy with templates, previewing posts, and (later) publishing via OAuth. Stack: **Next.js**, **Clerk**, **Drizzle** + **Neon**, **Tailwind** / **shadcn-style** UI.
+Web app for capturing ideas, generating **LinkedIn** and **X (Twitter)** copy with templates, previewing posts, and (later) publishing via OAuth. Stack: **Next.js**, **Clerk**, **Drizzle** + **Neon**, **TanStack Query** (client server state for posts), **Tailwind** / **shadcn-style** UI.
 
 ## Prerequisites
 
 - [Bun](https://bun.sh) (or npm/pnpm)
 - [Clerk](https://clerk.com) application keys
-- [Neon](https://neon.tech) Postgres `DATABASE_URL` (after schema migrations)
+- [Neon](https://neon.tech) Postgres `DATABASE_URL`, **or** local Postgres via Docker (see below)
 
 ## Setup
 
@@ -30,6 +30,25 @@ bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
+
+## Local Postgres (Docker)
+
+The app’s default DB client targets **Neon’s HTTP driver** (`@neondatabase/serverless`). A **standard Postgres** instance (e.g. `docker-compose.yml` in this repo) speaks TCP only, so the app **auto-switches to the `pg` driver** when `DATABASE_URL` points at `localhost` / `127.0.0.1` (see `db/index.ts`). Override anytime with `DATABASE_DRIVER=pg` or `DATABASE_DRIVER=neon`.
+
+1. Start Postgres: `docker compose up -d`
+2. In `.env.local`, set a URL that matches `docker-compose.yml` and disables SSL from the host (typical for local Docker):
+
+   `DATABASE_URL=postgresql://postgres:mypassword@localhost:5432/postgres?sslmode=disable`
+
+3. Apply schema: `bun run db:migrate`
+
+If you omit `?sslmode=disable`, Node may try TLS and fail with SSL-related connection errors.
+
+## TanStack Query (client data)
+
+The authenticated app shell wraps routes in a shared [`QueryClient`](https://tanstack.com/query/latest) (`components/providers/query-provider.tsx`). Loading an existing post on **`/edit-post`** uses the **`usePost`** hook in `hooks/use-post.ts` (backed by `GET /api/posts/[id]`). The **Recent Posts** list on **`/posts`** uses **`usePosts`** in `hooks/use-posts.ts` (`GET /api/posts` with optional `?status=`). Query keys for posts live in `lib/queries/post-keys.ts`.
+
+In **development**, [React Query DevTools](https://tanstack.com/query/latest/docs/framework/react/devtools) appear as a floating control (bottom-left by default). They are not bundled for production UI.
 
 ## LLM configuration (content generation)
 

@@ -47,10 +47,13 @@ the repository root (copying the exact semver range or pin recorded there):
 | Components   | `shadcn` (CLI and generated UI; Radix-style primitives as integrated via Shadcn) |
 | Styling      | `tailwindcss`, `@tailwindcss/postcss`                                            |
 | Client state | `zustand`                                                                        |
+| Async server reads (client) | `@tanstack/react-query`, `@tanstack/react-query-devtools` (DevTools development-only) |
 
 Do not substitute alternate frameworks or state libraries for these roles unless the constitution is amended.
 Other dependencies already in `package.json` (e.g., data or AI clients) MAY be used as needed but MUST NOT
-replace the stack above for core UI, routing, styling, or primary forms/state.
+replace the stack above for core UI, routing, styling, or primary forms/state. TanStack Query is the
+standard layer for caching and loading server-backed resources on the client (e.g. post by id); it does not
+replace `zustand` for global UI/product state.
 
 ## Precedence & Conflicting Guidance
 
