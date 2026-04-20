@@ -1,0 +1,12 @@
+# Local Postgres for development. Point DATABASE_URL at localhost (see README.md) so the app uses the TCP `pg` driver instead of Neon’s HTTP driver.
+services:
+  db:
+    image: postgres:16.4
+    environment:
+      - POSTGRES_PASSWORD=mypassword
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=postgres
+    ports:
+      - '5432:5432'
+    volumes:
+      - ./docker-data/db:/var/lib/postgresql/data

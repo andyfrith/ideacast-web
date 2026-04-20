@@ -41,6 +41,7 @@ This document outlines the final UI design for Ideacast, incorporating a bold, c
     - A large text input field for raw content ideas.
     - An option to upload images.
     - Real-time previews of content formatted for social media (e.g., Instagram, YouTube, X and LinkedIn) with inline editing capabilities.
+    - When editing an existing post (deep link or from Recent Posts), show a concise loading state until the saved post is loaded from the server (TanStack Query on the client).
   - **Recent Posts Display:**
     - A list or grid view of past content with visual indicators of status (draft, pending, published).
   - **Settings & Templates Screens:**

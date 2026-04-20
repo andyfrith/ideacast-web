@@ -1,8 +1,11 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Loader2Icon, SparklesIcon, SaveIcon } from "lucide-react";
 import { toast } from "sonner";
+import { z } from "zod";
 
 import {
   PlatformPreviews,
@@ -12,8 +15,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import type { PostDto } from "@/hooks/use-post";
 import { DEFAULT_TEMPLATE_ID } from "@/lib/content/default-templates";
 import { readFileAsBase64Parts } from "@/lib/client/image-data-url";
+import { postKeys } from "@/lib/queries/post-keys";
 import { cn } from "@/lib/utils";
 
 type TemplateOption = {
@@ -25,15 +30,79 @@ const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
 const emptyCopy = (): PlatformCopy => ({ linkedin: "", twitter: "" });
 
+function formattedToCopy(fc: unknown): PlatformCopy {
+  if (!fc || typeof fc !== "object") {
+    return emptyCopy();
+  }
+  const o = fc as Record<string, unknown>;
+  return {
+    linkedin: typeof o.linkedin === "string" ? o.linkedin : "",
+    twitter: typeof o.twitter === "string" ? o.twitter : "",
+  };
+}
+
+function isUuid(value: string): boolean {
+  return z.string().uuid().safeParse(value).success;
+}
+
+function buildInitialEditorState(
+  initialPostId: string | null,
+  initialPostSnapshot: PostDto | null,
+) {
+  if (
+    !initialPostId ||
+    !initialPostSnapshot ||
+    initialPostSnapshot.id !== initialPostId
+  ) {
+    return {
+      rawContent: "",
+      platformCopy: emptyCopy(),
+      hasGenerated: false,
+      serverImageUrl: null as string | null,
+    };
+  }
+  const copy = formattedToCopy(initialPostSnapshot.formattedContent);
+  const hasText =
+    copy.linkedin.trim().length > 0 || copy.twitter.trim().length > 0;
+  return {
+    rawContent: initialPostSnapshot.rawContent ?? "",
+    platformCopy: copy,
+    hasGenerated: hasText,
+    serverImageUrl: initialPostSnapshot.imageUrl ?? null,
+  };
+}
+
+export type EditPostFormProps = {
+  /** When set, the editor targets this post id (save uses PATCH). */
+  initialPostId?: string | null;
+  /** Server snapshot when opening an existing post; omitted for new posts. */
+  initialPostSnapshot?: PostDto | null;
+};
+
 /**
- * New Post editor: raw input, optional image, template selection, generate, inline preview edits, save draft.
+ * New or existing post editor: raw input, optional image, template selection, generate, inline preview edits, save draft.
  */
-export function EditPostForm() {
+export function EditPostForm({
+  initialPostId = null,
+  initialPostSnapshot = null,
+}: EditPostFormProps) {
+  const router = useRouter();
+  const queryClient = useQueryClient();
+
+  const initialEditor = buildInitialEditorState(
+    initialPostId,
+    initialPostSnapshot,
+  );
+
+  const [postId, setPostId] = React.useState<string | null>(
+    initialPostId && isUuid(initialPostId) ? initialPostId : null,
+  );
   const [templates, setTemplates] = React.useState<TemplateOption[]>([]);
   const [templatesLoading, setTemplatesLoading] = React.useState(true);
   const [templateId, setTemplateId] = React.useState<string>(DEFAULT_TEMPLATE_ID);
-  const [rawContent, setRawContent] = React.useState("");
+  const [rawContent, setRawContent] = React.useState(initialEditor.rawContent);
   const [imageFile, setImageFile] = React.useState<File | null>(null);
+  const [serverImageUrl] = React.useState(initialEditor.serverImageUrl);
   const imagePreviewUrl = React.useMemo(() => {
     if (!imageFile) {
       return null;
@@ -49,44 +118,50 @@ export function EditPostForm() {
     };
   }, [imagePreviewUrl]);
 
-  const [platformCopy, setPlatformCopy] = React.useState<PlatformCopy>(emptyCopy);
-  const [hasGenerated, setHasGenerated] = React.useState(false);
+  const [platformCopy, setPlatformCopy] = React.useState(
+    initialEditor.platformCopy,
+  );
+  const [hasGenerated, setHasGenerated] = React.useState(
+    initialEditor.hasGenerated,
+  );
   const [generatingMode, setGeneratingMode] = React.useState<GeneratingMode>(null);
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/templates");
-        if (!res.ok) {
-          throw new Error("Could not load templates");
-        }
-        const data = (await res.json()) as { templates: TemplateOption[] };
-        if (cancelled) {
-          return;
-        }
-        setTemplates(
-          data.templates.map((t) => ({ id: t.id, name: t.name })),
-        );
-        if (data.templates.length > 0) {
-          const hasDefault = data.templates.some(
-            (t) => t.id === DEFAULT_TEMPLATE_ID,
+    queueMicrotask(() => {
+      void (async () => {
+        try {
+          const res = await fetch("/api/templates");
+          if (!res.ok) {
+            throw new Error("Could not load templates");
+          }
+          const data = (await res.json()) as { templates: TemplateOption[] };
+          if (cancelled) {
+            return;
+          }
+          setTemplates(
+            data.templates.map((t) => ({ id: t.id, name: t.name })),
           );
-          setTemplateId(
-            hasDefault ? DEFAULT_TEMPLATE_ID : data.templates[0].id,
+          if (data.templates.length > 0) {
+            const hasDefault = data.templates.some(
+              (t) => t.id === DEFAULT_TEMPLATE_ID,
+            );
+            setTemplateId(
+              hasDefault ? DEFAULT_TEMPLATE_ID : data.templates[0].id,
+            );
+          }
+        } catch (e) {
+          toast.error(
+            e instanceof Error ? e.message : "Failed to load templates",
           );
+        } finally {
+          if (!cancelled) {
+            setTemplatesLoading(false);
+          }
         }
-      } catch (e) {
-        toast.error(
-          e instanceof Error ? e.message : "Failed to load templates",
-        );
-      } finally {
-        if (!cancelled) {
-          setTemplatesLoading(false);
-        }
-      }
-    })();
+      })();
+    });
     return () => {
       cancelled = true;
     };
@@ -206,22 +281,52 @@ export function EditPostForm() {
   const handleSaveDraft = async () => {
     setSaving(true);
     try {
+      const payload = {
+        rawContent,
+        formattedContent: {
+          linkedin: platformCopy.linkedin,
+          twitter: platformCopy.twitter,
+        },
+      };
+
+      if (postId && isUuid(postId)) {
+        const res = await fetch(`/api/posts/${postId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const body = (await res.json()) as { error?: string };
+        if (!res.ok) {
+          throw new Error(body.error ?? "Could not update draft");
+        }
+        toast.success("Draft saved");
+        void queryClient.invalidateQueries({ queryKey: postKeys.detail(postId) });
+        void queryClient.invalidateQueries({ queryKey: postKeys.lists() });
+        router.refresh();
+        return;
+      }
+
       const res = await fetch("/api/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          rawContent,
-          formattedContent: {
-            linkedin: platformCopy.linkedin,
-            twitter: platformCopy.twitter,
-          },
-        }),
+        body: JSON.stringify(payload),
       });
-      const body = (await res.json()) as { error?: string };
+      const body = (await res.json()) as {
+        post?: PostDto;
+        error?: string;
+      };
       if (!res.ok) {
         throw new Error(body.error ?? "Could not save draft");
       }
+      if (!body.post?.id) {
+        throw new Error("Could not save draft");
+      }
+      setPostId(body.post.id);
+      queryClient.setQueryData(postKeys.detail(body.post.id), body.post);
+      void queryClient.invalidateQueries({ queryKey: postKeys.lists() });
+      router.replace(`/edit-post?postId=${body.post.id}`);
       toast.success("Draft saved");
+      router.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Save failed");
     } finally {
@@ -282,6 +387,10 @@ export function EditPostForm() {
             />
             {imageFile ? (
               <p className="text-xs text-muted-foreground">{imageFile.name}</p>
+            ) : serverImageUrl ? (
+              <p className="text-xs text-muted-foreground">
+                A saved image is attached. Pick a new file to replace it for generation (upload to storage is not wired yet).
+              </p>
             ) : null}
           </div>
 
@@ -332,6 +441,7 @@ export function EditPostForm() {
           onRegenerateLinkedIn={() => runSinglePlatformRegenerate("linkedin")}
           onRegenerateTwitter={() => runSinglePlatformRegenerate("twitter")}
           imagePreviewUrl={imagePreviewUrl}
+          remoteImageUrl={imageFile ? null : serverImageUrl}
           hasGenerated={hasGenerated}
           generatingMode={generatingMode}
         />

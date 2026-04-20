@@ -18,6 +18,7 @@
 
 - Local UI state managed with React state/hooks.
 - Global state management via Context API (or Zustand if scaling demands).
+- **TanStack Query** for server-backed reads on the client (e.g. loading a single post on `/edit-post` via `usePost`), with React Query DevTools enabled in development.
 - Real-time preview updates through client-side caching.
 - Synchronization with server state from Neon.
 
@@ -32,7 +33,7 @@
 
 # Technical Stack
 
-- **Frontend:** React, Next.js, Tailwind CSS, Shadcn UI, React Hook Form, Zustand, Lucide Icons, Sonner Toast, Zod.
+- **Frontend:** React, Next.js, Tailwind CSS, Shadcn UI, React Hook Form, TanStack Query, Zustand, Lucide Icons, Sonner Toast, Zod.
 - **Backend:** Drizzle, Postgres, Neon, Vercel.
 - **LLM formatting:** Configurable — **Google Gemini** (hosted API) or **Ollama** (local); selected via `LLM_PROVIDER`.
 - **Authentication & Payment:** Clerk Auth, Stripe.
